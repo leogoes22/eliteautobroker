@@ -1038,12 +1038,13 @@ select.field option{background:var(--panel);color:var(--text);}
 var LOJA      = "Elite Auto Broker";
 var WA_PHONE  = "5521970061441";
 var FOTO_BASE = "https://www.autocerto.com/fotos/5380/";
+function fotoURL(id, n){ return /^https?:\/\//i.test(n) ? n : FOTO_BASE + id + "/" + n + ".jpg"; }
 
 /* Estoque ao vivo (n8n → Redis → webhook), mesmo padrão da Machado.
    Enquanto estiver vazio, o site usa o estoque embutido abaixo.
    Ex.: "https://apin8n.lv-mktdeconversa.com/webhook/estoque-elite"
    Resposta esperada: { ok:true, veiculos:[ {id,b,m,v,y,ys,km,cam,comb,cor,p,t,f,g:[...],op:[...],fx:{}} ] } */
-var ESTOQUE_API = "";
+var ESTOQUE_API = "https://apin8n.lv-mktdeconversa.com/webhook/estoque-elite";
 
 /* ============================================================
    ESTOQUE EMBUTIDO — b=marca m=modelo v=versão y=ano ys=ano(num)
@@ -1126,7 +1127,7 @@ function normaliza(c){
     o.id = m ? m[1] : String(Math.abs(hash(o.b + o.m + o.v + o.y)));
   }
   o.id = String(o.id);
-  if (!o.i && o.g && o.g.length) o.i = FOTO_BASE + o.id + "/" + o.g[0] + ".jpg";
+  if (!o.i && o.g && o.g.length) o.i = fotoURL(o.id, o.g[0]);
   if (!o.ys) o.ys = parseInt(String(o.y).slice(-4), 10) || 0;
   if (!o.cam) o.cam = inferCambio(o.v);
   if (!o.comb) o.comb = inferComb(o.v);
@@ -1462,7 +1463,7 @@ function kpis(){
    testamos os números e ficam só as imagens que carregam de verdade.
    ============================================================ */
 function fotosDo(c){
-  if (c.g && c.g.length) return c.g.map(function(n){ return FOTO_BASE + c.id + "/" + n + ".jpg"; });
+  if (c.g && c.g.length) return c.g.map(function(n){ return fotoURL(c.id, n); });
   if (c._fotos) return c._fotos;
   return c.i ? [c.i] : [];
 }
