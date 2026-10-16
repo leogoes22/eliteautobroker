@@ -974,7 +974,16 @@ var CARS = [
    ============================================================ */
 var $  = function(id){ return document.getElementById(id); };
 var $$ = function(sel, root){ return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
-var brl = function(n){ return n ? "R$ " + Number(n).toLocaleString("pt-BR") + ",00" : "Sob consulta"; };
+/* PREÇO: a lista embutida acima é só reserva (modelos/fotos) e pode estar
+   desatualizada. O valor só aparece depois que o estoque AO VIVO confirmar.
+   carregando -> "Consultando valor…" | falhou -> "Sob consulta" | ok -> R$ real */
+var precoStatus = ESTOQUE_API ? "carregando" : "ok";
+var brl = function(n){
+  if (precoStatus === "carregando") return "Consultando valor\u2026";
+  if (precoStatus === "falhou") return "Sob consulta";
+  return n ? "R$ " + Number(n).toLocaleString("pt-BR") + ",00" : "Sob consulta";
+};
+var temPreco = function(c){ return precoStatus === "ok" && !!(c && c.p); };
 var kmFmt = function(n){ return Number(n || 0).toLocaleString("pt-BR") + " km"; };
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(m){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]; }); }
 function waLink(msg){ return "https://wa.me/" + WA_PHONE + "?text=" + encodeURIComponent(msg); }
@@ -1156,7 +1165,7 @@ function card(c, idx){
       '<p class="card-ver">' + esc(c.v) + '</p>' +
       '<div class="card-specs"><i>' + ICO.cal + esc(c.y) + '</i><i>' + ICO.km + kmFmt(c.km) + '</i></div>' +
       '<div class="card-foot">' +
-        '<div class="price"><small>' + (c.p ? "À vista" : "Preço") + '</small><b>' + brl(c.p) + '</b></div>' +
+        '<div class="price"><small>' + (temPreco(c) ? "À vista" : "Preço") + '</small><b>' + brl(c.p) + '</b></div>' +
         '<a class="go" href="' + waLink(msg) + '" target="_blank" rel="noopener" aria-label="Consultar ' + esc(c.m) + ' no WhatsApp">' + ICO.wa + '</a>' +
       '</div>' +
     '</div>' +
@@ -1494,7 +1503,7 @@ function abrirModal(id, semHistorico){
   ficha = ficha.filter(function(p){ return p[1]; });
 
   var preco = brl(c.p);
-  var msg = "Olá! Tenho interesse no " + tituloLongo(c) + " — " + preco + ".\nVi no site: " + linkVeiculo(c) + "\nAinda está disponível?";
+  var msg = "Olá! Tenho interesse no " + tituloLongo(c) + (temPreco(c) ? " — " + preco : "") + ".\nVi no site: " + linkVeiculo(c) + "\nAinda está disponível?";
   var tags = [c.y, kmFmt(c.km), c.cam, c.comb, c.cor].filter(Boolean);
 
   $("vInfo").innerHTML =
@@ -1503,7 +1512,7 @@ function abrirModal(id, semHistorico){
       '<h2 class="vinfo-nome">' + esc(c.m) + '</h2>' +
       '<p class="vinfo-versao">' + esc(c.v) + '</p>' +
     '</div>' +
-    '<div class="vinfo-preco"><b>' + preco + '</b>' + (c.p ? '<small>à vista</small>' : '') + '</div>' +
+    '<div class="vinfo-preco"><b>' + preco + '</b>' + (temPreco(c) ? '<small>à vista</small>' : '') + '</div>' +
     '<div class="vinfo-tags">' + tags.map(function(t){ return '<span class="vtag">' + esc(t) + '</span>'; }).join("") + '</div>' +
     '<div class="vinfo-acoes">' +
       '<a class="btn btn-wa btn-lg" href="' + waLink(msg) + '" target="_blank" rel="noopener">' + ICO.wa + 'Falar com consultor</a>' +
@@ -1664,21 +1673,61 @@ function linha(rotulo, valor){ return valor ? "*" + rotulo + ":* " + valor + "\n
 /* ============================================================
    ESTOQUE AO VIVO (opcional)
    ============================================================ */
-var aoVivo = [];
-function estoqueAoVivo(){
-  if (!ESTOQUE_API || !window.fetch) return;
-  fetch(ESTOQUE_API, { cache:"no-store" })
+var aoVivo = [], ultimaBusca = 0;
+
+/* Redesenha tudo que mostra preço — inclusive o veículo que já está aberto.
+   (Antes o modal aberto por link do WhatsApp/Instagram ficava com o preço antigo.) */
+function atualizarTela(){
+  kpis(); buildCats();
+  if (grade) grade.refresh();
+  aoVivo.forEach(function(fn){ fn(); });
+  if (box && box.classList.contains("open") && carro){
+    var foco = ultimoFoco, sc = box.querySelector(".vmodal-scroll"), topo = sc ? sc.scrollTop : 0;
+    if (acheCarro(carro.id)){
+      abrirModal(carro.id, true);
+      ultimoFoco = foco;
+      if (sc) sc.scrollTop = topo;
+    } else {
+      fecharModal();
+      toast("Esse veículo já foi vendido. Veja as outras opções do estoque.");
+    }
+  }
+}
+
+function estoqueAoVivo(tentativa){
+  if (!ESTOQUE_API || !window.fetch){
+    if (precoStatus === "carregando"){ precoStatus = "falhou"; atualizarTela(); }
+    return;
+  }
+  tentativa = tentativa || 1;
+  ultimaBusca = Date.now();
+  var ctl = window.AbortController ? new AbortController() : null;
+  var tm = ctl ? setTimeout(function(){ ctl.abort(); }, 15000) : null;
+  var url = ESTOQUE_API + (ESTOQUE_API.indexOf("?") < 0 ? "?" : "&") + "_=" + Date.now();
+  fetch(url, { cache:"no-store", signal: ctl ? ctl.signal : undefined })
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
-      if (!(d && d.ok && Array.isArray(d.veiculos) && d.veiculos.length)) return;
+      clearTimeout(tm);
+      if (!(d && d.ok && Array.isArray(d.veiculos) && d.veiculos.length)) throw new Error("estoque vazio");
       CARS = d.veiculos.map(normaliza);
-      kpis(); buildCats();
-      if (grade) grade.refresh();
-      aoVivo.forEach(function(fn){ fn(); });
+      precoStatus = "ok";
+      atualizarTela();
       deepLink();
     })
-    .catch(function(){ /* webhook fora do ar: segue com o estoque embutido */ });
+    .catch(function(){
+      clearTimeout(tm);
+      if (precoStatus === "ok") return; /* já tem preço ao vivo de uma busca anterior */
+      if (tentativa < 3){ setTimeout(function(){ estoqueAoVivo(tentativa + 1); }, tentativa * 2000); return; }
+      precoStatus = "falhou"; /* webhook fora do ar: mostra "Sob consulta", nunca preço velho */
+      atualizarTela();
+    });
 }
+
+/* Celular guarda a aba aberta por dias: ao voltar pra ela, busca o estoque de novo */
+window.addEventListener("pageshow", function(e){ if (e.persisted) estoqueAoVivo(); });
+document.addEventListener("visibilitychange", function(){
+  if (document.visibilityState === "visible" && Date.now() - ultimaBusca > 5 * 60 * 1000) estoqueAoVivo();
+});
 
 function deepLink(){
   if (!$("cards")) return;
