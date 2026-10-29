@@ -197,6 +197,11 @@ h1,h2,h3,h4,h5{
 }
 .hero-bg{position:absolute;inset:0;z-index:0;}
 .hero-bg img{width:100%;height:100%;object-fit:cover;object-position:center 38%;font-size:0;color:transparent;filter:saturate(.9) contrast(1.05);}
+.hero-bg img{position:absolute;inset:0;opacity:0;transition:opacity 1s ease;}
+.hero-bg img.hero-current{opacity:1;}
+.hero-pause{position:absolute;right:24px;bottom:24px;z-index:3;background:rgba(5,5,6,.7);color:#fff;border:1px solid #ffffff40;border-radius:99px;padding:9px 14px;font:inherit;font-size:12px;cursor:pointer;}
+.hero-pause[hidden]{display:none;}
+@media(prefers-reduced-motion:reduce){.hero-bg img{transition:none;}}
 .hero-bg::after{
   content:"";position:absolute;inset:0;
   background:
@@ -764,7 +769,7 @@ select.field option{background:var(--panel);color:var(--text);}
   <section class="hero">
     <div class="hero-stripe"></div>
     <div class="hero-bg">
-      <img src="https://www.autocerto.com/fotos/5380/5346766/1_031157.jpg" alt="Range Rover Evoque em estoque na Elite Auto Broker" fetchpriority="high">
+      <img src="https://www.autocerto.com/fotos/5380/5346766/1_031157.jpg" alt="Range Rover Evoque em estoque na Elite Auto Broker" class="hero-current" fetchpriority="high">
     </div>
     <div class="wrap">
       <div class="hero-inner">
@@ -1926,6 +1931,90 @@ ELITE.buildFAQ("faq", [
   ["Dá para ver o carro pessoalmente?","Sim, e recomendamos. Estamos na R. Ambrósio, 158, Vila Emil, Mesquita/RJ, de segunda a sexta das 9h às 18h e sábado das 9h às 16h. Agende pelo WhatsApp para garantir que o carro esteja disponível na hora da sua visita."],
   ["Vocês vendem para outros estados?","Sim. Organizamos toda a documentação e orientamos sobre transporte do veículo. Fale com um consultor para simular custos e prazos até a sua cidade."]
 ]);
+/* Fotos do estoque atual: duas camadas, com a próxima foto já carregada. */
+(function(){
+  var bg = document.querySelector('.hero-bg');
+  if (!bg) return;
+  var first = bg.querySelector('img');
+  var second = document.createElement('img');
+  second.alt = ''; second.decoding = 'async';
+  bg.appendChild(second);
+  first.classList.add('hero-current');
+  var layers = [first, second], active = 0, queue = [], cursor = 0;
+  var timer = null, generation = 0, prepared = null, busy = false;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var visible = true;
+  var pause = document.createElement('button');
+  pause.type = 'button'; pause.className = 'hero-pause';
+  pause.textContent = 'Pausar fotos'; pause.setAttribute('aria-pressed', 'false');
+  pause.hidden = true; bg.parentNode.appendChild(pause);
+  var paused = false;
+  function remember(id){ try { sessionStorage.setItem('elite-hero-last', id); } catch(e){} }
+  function schedule(){
+    clearTimeout(timer);
+    if (!paused && !reduced.matches && visible && !document.hidden && queue.length > 1){
+      timer = setTimeout(advance, 6000);
+    }
+  }
+  function preload(){
+    if (!queue.length || prepared) return;
+    var car = queue[cursor % queue.length], img = new Image(), token = generation;
+    prepared = {car:car, image:img, ready:false};
+    img.onload = function(){
+      if (token !== generation || !prepared || prepared.image !== img) return;
+      if (img.naturalWidth < 600 || img.naturalWidth < img.naturalHeight){ failed(); return; }
+      prepared.ready = true;
+    };
+    function failed(){
+      if (token !== generation || !prepared || prepared.image !== img) return;
+      queue.splice(cursor % queue.length, 1); prepared = null; preload();
+    }
+    img.onerror = failed; img.src = car.i;
+  }
+  function advance(){
+    if (busy || paused || reduced.matches || !visible || document.hidden) return;
+    preload();
+    if (!prepared || !prepared.ready){ schedule(); return; }
+    var next = 1 - active, item = prepared;
+    layers[next].src = item.image.src;
+    layers[next].alt = item.car.b + ' ' + item.car.m + ' — Elite Auto Broker';
+    layers[next].classList.add('hero-current'); layers[active].classList.remove('hero-current');
+    active = next; remember(String(item.car.id));
+    cursor = (cursor + 1) % queue.length; prepared = null; busy = true;
+    setTimeout(function(){busy = false; preload();}, 1100);
+    schedule();
+  }
+  function rebuild(){
+    var cars = ELITE.cars().filter(function(c){return c.i && c.t !== 'Moto';});
+    if (!cars.length) return;
+    generation++; clearTimeout(timer); prepared = null;
+    var seen = {};
+    cars = cars.filter(function(c){if(seen[c.i]) return false; seen[c.i]=true; return true;});
+    for(var i=cars.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)), tmp=cars[i];cars[i]=cars[j];cars[j]=tmp;}
+    var last = ''; try {last=sessionStorage.getItem('elite-hero-last') || '';} catch(e){}
+    if(cars.length>1 && String(cars[0].id)===last){cars.push(cars.shift());}
+    queue = cars.slice(0,6); cursor=0; preload();
+    pause.hidden = queue.length < 2 || reduced.matches;
+    // Primeira troca só acontece quando a foto está pronta, sem fundo vazio.
+    var token=generation, attempts=0;
+    function initial(){
+      if(token!==generation || !queue.length) return;
+      if(!prepared || !prepared.ready){if(++attempts<50) setTimeout(initial,200);return;}
+      if(reduced.matches){
+        layers[active].src=prepared.image.src; layers[active].alt=prepared.car.b+' '+prepared.car.m+' — Elite Auto Broker';
+        remember(String(prepared.car.id)); return;
+      }
+      advance();
+    }
+    initial();
+  }
+  pause.addEventListener('click',function(){paused=!paused;pause.textContent=paused?'Retomar fotos':'Pausar fotos';pause.setAttribute('aria-pressed',String(paused));schedule();});
+  document.addEventListener('visibilitychange',schedule);
+  reduced.addEventListener('change',function(){pause.hidden=reduced.matches || queue.length<2;schedule();});
+  if ('IntersectionObserver' in window){new IntersectionObserver(function(entries){visible=entries[0].isIntersecting;schedule();}).observe(bg.parentNode);}
+  ELITE.aoAtualizar(rebuild); rebuild();
+})();
+
 ELITE.initStock({ passo: 9 });
 ELITE.boot();
 
