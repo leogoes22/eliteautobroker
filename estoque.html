@@ -767,7 +767,7 @@ select.field option{background:var(--panel);color:var(--text);}
       <h1>Todo o pátio<em>na palma da mão</em></h1>
       <p>Estoque real da loja em Mesquita, com fotos, ficha técnica e preço de cada carro. Toque no veículo para ver a galeria e falar direto com o consultor.</p>
       <div class="hero-kpis">
-        <div class="kpi"><b id="kpiTotal">40</b><span>Veículos disponíveis</span></div>
+        <div class="kpi"><b id="kpiTotal">—</b><span>Veículos disponíveis</span></div>
         <div class="kpi"><b id="kpiBrands">18</b><span>Marcas</span></div>
         <div class="kpi"><b id="kpiMin">R$ 18 mil</b><span>A partir de</span></div>
         <div class="kpi"><b id="kpiNovo">2026</b><span>Ano mais novo</span></div>
@@ -814,7 +814,7 @@ select.field option{background:var(--panel);color:var(--text);}
 
         <div>
           <div class="bar">
-            <p class="found"><b id="count">40</b> veículos encontrados</p>
+            <p class="found"><b id="count">—</b> veículos encontrados</p>
             <div class="sortwrap">
               <label for="sort">Ordenar</label>
               <select class="field" id="sort">
@@ -1021,6 +1021,19 @@ function normaliza(c){
   return o;
 }
 CARS = CARS.map(normaliza);
+/* Nunca anunciar a lista demonstrativa como estoque disponível. */
+var estoqueCacheKey = "elite-estoque-confirmado-v1";
+var estoqueConfirmado = !ESTOQUE_API;
+if (ESTOQUE_API){
+  CARS = [];
+  try {
+    var salvo = JSON.parse(localStorage.getItem(estoqueCacheKey) || "null");
+    if (salvo && Date.now() - salvo.at < 5 * 60 * 1000 && Array.isArray(salvo.veiculos)){
+      CARS = salvo.veiculos.map(normaliza);
+      estoqueConfirmado = true;
+    }
+  } catch(e){} /* armazenamento bloqueado não impede a consulta */
+}
 
 function acheCarro(id){
   for (var i = 0; i < CARS.length; i++) if (CARS[i].id === String(id)) return CARS[i];
@@ -1279,6 +1292,17 @@ function initStock(opts){
 
   function draw(){
     var list = query();
+    if (!estoqueConfirmado){
+      $("count").textContent = "—";
+      var falhou = precoStatus === "falhou";
+      $("cards").innerHTML = '<div class="none" role="status"><b>' +
+        (falhou ? 'Não foi possível carregar o estoque' : 'Carregando estoque atualizado…') +
+        '</b><p>' + (falhou ? 'Tente novamente para consultar os veículos disponíveis.' : 'Aguarde enquanto consultamos os veículos disponíveis.') + '</p>' +
+        (falhou ? '<button type="button" class="btn btn-line btn-sm" data-repetir> Tentar novamente</button>' : '') + '</div>';
+      $("moreWrap").style.display = "none";
+      if (falhou) $("cards").querySelector("[data-repetir]").addEventListener("click", function(){ precoStatus = "carregando"; atualizarTela(); estoqueAoVivo(); });
+      return;
+    }
     $("count").textContent = list.length;
     var slice = list.slice(0, state.shown);
     var el = $("cards");
@@ -1303,7 +1327,12 @@ function initStock(opts){
   marcaChips();
   draw();
 
-  grade = { setType: setType, refresh: function(){ montaMarcas(); draw(); } };
+  grade = { setType: setType, refresh: function(){
+    if (pm && !Object.keys(counts).length && CARS.length){
+      CARS.forEach(function(c){ if (c.b.toLowerCase() === pm.toLowerCase()) state.brands[c.b] = true; });
+    }
+    montaMarcas(); draw();
+  } };
 }
 
 /* ============================================================
@@ -1324,7 +1353,7 @@ function buildCats(){
     var n = CARS.filter(function(c){ return c.t === t; }).length;
     var b = document.createElement("button");
     b.type = "button"; b.className = "cat";
-    b.innerHTML = '<span class="ic">' + CAT_ICONS[t] + '</span><span><span class="nm">' + t + '</span><span class="ct">' + n + (n === 1 ? ' veículo' : ' veículos') + '</span></span>';
+    b.innerHTML = '<span class="ic">' + CAT_ICONS[t] + '</span><span><span class="nm">' + t + '</span><span class="ct">' + (estoqueConfirmado ? n + (n === 1 ? ' veículo' : ' veículos') : 'Consultando…') + '</span></span>';
     b.addEventListener("click", function(){
       if (grade){ grade.setType(t); $("estoque").scrollIntoView({behavior:"smooth", block:"start"}); }
       else location.href = "estoque.html?cat=" + encodeURIComponent(t);
@@ -1336,8 +1365,8 @@ function buildCats(){
 function kpis(){
   var m = {};
   CARS.forEach(function(c){ m[c.b] = 1; });
-  if ($("kpiTotal")) $("kpiTotal").textContent = CARS.length;
-  if ($("kpiBrands")) $("kpiBrands").textContent = Object.keys(m).length;
+  if ($("kpiTotal")) $("kpiTotal").textContent = estoqueConfirmado ? CARS.length : "—";
+  if ($("kpiBrands")) $("kpiBrands").textContent = estoqueConfirmado ? Object.keys(m).length : "—";
 }
 
 /* ============================================================
@@ -1673,7 +1702,7 @@ function linha(rotulo, valor){ return valor ? "*" + rotulo + ":* " + valor + "\n
 /* ============================================================
    ESTOQUE AO VIVO (opcional)
    ============================================================ */
-var aoVivo = [], ultimaBusca = 0;
+var aoVivo = [], ultimaBusca = 0, consultaEmCurso = false;
 
 /* Redesenha tudo que mostra preço — inclusive o veículo que já está aberto.
    (Antes o modal aberto por link do WhatsApp/Instagram ficava com o preço antigo.) */
@@ -1699,6 +1728,8 @@ function estoqueAoVivo(tentativa){
     if (precoStatus === "carregando"){ precoStatus = "falhou"; atualizarTela(); }
     return;
   }
+  if (consultaEmCurso) return;
+  consultaEmCurso = true;
   tentativa = tentativa || 1;
   ultimaBusca = Date.now();
   var ctl = window.AbortController ? new AbortController() : null;
@@ -1708,14 +1739,18 @@ function estoqueAoVivo(tentativa){
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
       clearTimeout(tm);
-      if (!(d && d.ok && Array.isArray(d.veiculos) && d.veiculos.length)) throw new Error("estoque vazio");
+      if (!(d && d.ok && Array.isArray(d.veiculos))) throw new Error("resposta de estoque inválida");
       CARS = d.veiculos.map(normaliza);
+      estoqueConfirmado = true;
+      consultaEmCurso = false;
+      try { localStorage.setItem(estoqueCacheKey, JSON.stringify({at:Date.now(), veiculos:d.veiculos})); } catch(e){}
       precoStatus = "ok";
       atualizarTela();
       deepLink();
     })
     .catch(function(){
       clearTimeout(tm);
+      consultaEmCurso = false;
       if (precoStatus === "ok") return; /* já tem preço ao vivo de uma busca anterior */
       if (tentativa < 3){ setTimeout(function(){ estoqueAoVivo(tentativa + 1); }, tentativa * 2000); return; }
       precoStatus = "falhou"; /* webhook fora do ar: mostra "Sob consulta", nunca preço velho */
@@ -1764,11 +1799,11 @@ window.ELITE = {
     var cars = ELITE.cars();
     var precos = cars.map(function(c){ return c.p; }).filter(Boolean);
     var min = precos.length ? Math.min.apply(null, precos) : 0;
-    var novo = Math.max.apply(null, cars.map(function(c){ return c.ys || 0; }));
+    var novo = cars.length ? Math.max.apply(null, cars.map(function(c){ return c.ys || 0; })) : 0;
     var el = document.getElementById("kpiMin");
     if (el) el.textContent = min ? "R$ " + Math.floor(min / 1000) + " mil" : "Consulte";
     var n = document.getElementById("kpiNovo");
-    if (n && novo) n.textContent = novo;
+    if (n) n.textContent = novo || "—";
   }
   extras();
   ELITE.aoAtualizar(extras);
