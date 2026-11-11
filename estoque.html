@@ -626,9 +626,21 @@ select.field option{background:var(--panel);color:var(--text);}
 .vinfo-preco{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
 .vinfo-preco small{font-size:.86rem;color:var(--faint);font-weight:600;}
 .vinfo-preco b{font-family:var(--display);font-size:clamp(1.8rem,3vw,2.3rem);color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums;}
-.selo-blindado{display:inline-block;border-radius:6px;padding:5px 10px;background:#ffe098;color:#282014;font-weight:750;font-size:.8rem;}
-.card-img .selo-blindado{position:absolute;bottom:10px;left:10px;z-index:2;}
-.vinfo-topo .selo-blindado{margin-top:9px;}
+.selo-blindado{
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  font-family:var(--display);font-size:.78rem;font-weight:600;letter-spacing:.07em;
+  line-height:1;text-transform:uppercase;white-space:nowrap;
+}
+.selo-blindado svg{width:13px;height:15px;flex:none;}
+.card-img .selo-blindado{
+  position:absolute;right:-47px;bottom:25px;z-index:2;width:174px;height:27px;
+  transform:rotate(-45deg);background:var(--brand);color:var(--black);
+  border-block:1px solid rgba(0,0,0,.2);box-shadow:0 2px 6px rgba(0,0,0,.32);
+  pointer-events:none;
+}
+.vinfo-topo .selo-blindado{
+  margin-top:12px;padding:6px 0 6px 9px;border-left:3px solid var(--brand);color:var(--brand);
+}
 .vdescricao{white-space:pre-line;overflow-wrap:anywhere;}
 .vopcionais{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:0 16px;padding:0;list-style:none;}
 .vopcionais li{display:flex;align-items:baseline;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.9rem;}
@@ -1171,7 +1183,7 @@ var ICO = {
    ============================================================ */
 function seloBlindado(c){
   var blindado = (c.op || []).some(function(item){ return /^blindad[oa]$/i.test(item.trim()); });
-  return blindado ? '<span class="selo-blindado">Veículo blindado</span>' : '';
+  return blindado ? '<span class="selo-blindado"><svg aria-hidden="true" viewBox="0 0 16 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 1.5 14 4v4.2c0 3.6-2.5 6.3-6 8.2-3.5-1.9-6-4.6-6-8.2V4z"/><path d="m5 8.7 2 2 4-4"/></svg>Blindado</span>' : '';
 }
 function descricaoVeiculo(c){
   if (typeof c.descricao === "string" && c.descricao.trim()) return c.descricao.trim();
