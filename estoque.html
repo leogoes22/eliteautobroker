@@ -626,6 +626,13 @@ select.field option{background:var(--panel);color:var(--text);}
 .vinfo-preco{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
 .vinfo-preco small{font-size:.86rem;color:var(--faint);font-weight:600;}
 .vinfo-preco b{font-family:var(--display);font-size:clamp(1.8rem,3vw,2.3rem);color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums;}
+.selo-blindado{display:inline-block;border-radius:6px;padding:5px 10px;background:#ffe098;color:#282014;font-weight:750;font-size:.8rem;}
+.card-img .selo-blindado{position:absolute;bottom:10px;left:10px;z-index:2;}
+.vinfo-topo .selo-blindado{margin-top:9px;}
+.vdescricao{white-space:pre-line;overflow-wrap:anywhere;}
+.vopcionais{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:0 16px;padding:0;list-style:none;}
+.vopcionais li{display:flex;align-items:baseline;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.9rem;}
+.vopcionais li span{color:var(--brand);font-weight:700;}
 .vinfo-tags{display:flex;flex-wrap:wrap;gap:7px;}
 .vtag{padding:6px 13px;border-radius:var(--pill);background:rgba(255,255,255,.05);border:1px solid var(--line);font-size:.84rem;font-weight:600;color:var(--text);}
 .vinfo-acoes{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
@@ -1162,12 +1169,22 @@ var ICO = {
 /* ============================================================
    CARD DE VEÍCULO
    ============================================================ */
+function seloBlindado(c){
+  var blindado = (c.op || []).some(function(item){ return /^blindad[oa]$/i.test(item.trim()); });
+  return blindado ? '<span class="selo-blindado">Veículo blindado</span>' : '';
+}
+function descricaoVeiculo(c){
+  if (typeof c.descricao === "string" && c.descricao.trim()) return c.descricao.trim();
+  var nome = [c.b, c.m, c.v].filter(Boolean).join(" ");
+  var dados = [c.y, c.cam && "câmbio " + c.cam.toLowerCase(), c.cor && "cor " + c.cor.toLowerCase()].filter(Boolean);
+  return nome + (dados.length ? " · " + dados.join(" · ") : "");
+}
 function card(c, idx){
   var msg = "Olá! Tenho interesse no " + tituloLongo(c) + " — " + brl(c.p) + ". Ainda está disponível?";
   return '<article class="card" data-veiculo="' + esc(c.id) + '" tabindex="0" aria-label="Ver fotos e detalhes do ' + esc(c.b + " " + c.m) + '" style="animation-delay:' + Math.min(idx,8)*40 + 'ms">' +
     '<div class="card-img">' +
       '<img src="' + esc(c.i) + '" alt="' + esc(c.b + " " + c.m) + '" loading="lazy" decoding="async">' +
-      '<span class="tag">' + esc(c.t) + '</span>' +
+      '<span class="tag">' + esc(c.t) + '</span>' + seloBlindado(c) +
       (c.f ? '<span class="tag hot">Destaque</span>' : '') +
     '</div>' +
     '<div class="card-in">' +
@@ -1539,7 +1556,7 @@ function abrirModal(id, semHistorico){
     '<div class="vinfo-topo">' +
       '<span class="vinfo-marca">' + esc(c.b) + '</span>' +
       '<h2 class="vinfo-nome">' + esc(c.m) + '</h2>' +
-      '<p class="vinfo-versao">' + esc(c.v) + '</p>' +
+      '<p class="vinfo-versao">' + esc(c.v) + '</p>' + seloBlindado(c) +
     '</div>' +
     '<div class="vinfo-preco"><b>' + preco + '</b>' + (temPreco(c) ? '<small>à vista</small>' : '') + '</div>' +
     '<div class="vinfo-tags">' + tags.map(function(t){ return '<span class="vtag">' + esc(t) + '</span>'; }).join("") + '</div>' +
@@ -1548,10 +1565,11 @@ function abrirModal(id, semHistorico){
       '<a class="btn btn-brand" href="financiamento.html?v=' + encodeURIComponent(c.id) + '">' + ICO.fin + 'Simular financiamento</a>' +
       '<button class="btn btn-line" type="button" id="vShare">' + ICO.share + 'Compartilhar</button>' +
     '</div>' +
+    '<div class="vficha"><h3>Descrição do veículo</h3><p class="vdescricao">' + esc(descricaoVeiculo(c)) + '</p></div>' +
     '<div class="vficha"><h3>Ficha técnica</h3><dl>' + ficha.map(function(p){
       return '<div><dt>' + esc(p[0]) + '</dt><dd>' + esc(p[1]) + '</dd></div>';
     }).join("") + '</dl></div>' +
-    (c.op && c.op.length ? '<div class="vficha"><h3>Opcionais</h3><div class="vinfo-tags">' + c.op.map(function(o){ return '<span class="vtag">' + esc(o) + '</span>'; }).join("") + '</div></div>' : '') +
+    (c.op && c.op.length ? '<div class="vficha"><h3>Opcionais do veículo</h3><ul class="vopcionais">' + c.op.map(function(o){ return '<li><span aria-hidden="true">✓</span>' + esc(o) + '</li>'; }).join("") + '</ul></div>' : '') +
     '<p class="vinfo-nota">Valores e disponibilidade podem mudar. Confirme com um consultor antes de fechar negócio.</p>';
 
   $("vShare").addEventListener("click", function(){ compartilhar(c); });
